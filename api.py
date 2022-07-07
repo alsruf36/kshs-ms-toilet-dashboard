@@ -5,13 +5,10 @@ from sqlmodel import Field, Session, SQLModel, create_engine, select, update
 from pydantic import BaseModel
 from fastapi.responses import JSONResponse
 
-class Tissue(SQLModel, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
-    rotation: float
-
 class Toilet(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    blocked: bool
+    rotation: float = Field(default=0.0)
+    flush: int = Field(default=0)
 
 engine = create_engine("sqlite:///toilet.db")
 SQLModel.metadata.create_all(engine)
@@ -25,21 +22,13 @@ def is_exist_info(model, id):
 
 app = FastAPI()
 
-@app.get("/tissues/")
-def get_tissues(id: int):
-    with Session(engine) as session:
-        tissue = session.query(Tissue).filter(Tissue.id == id).first()
-        if tissue is None:
-            return JSONResponse(status_code=404, content={"status": "not found"})
-        return JSONResponse(status_code=200, content={"status": "ok", "rotation": tissue.rotation})
-
 @app.post("/tissues/")
 def put_tissues(id: int, count: int, angle: int):
     rotation = float(count) + float(angle)/2.0
 
-    if is_exist_info(Tissue, id):
+    if is_exist_info(Toilet, id):
         with Session(engine) as session:
-            statement = select(Tissue).where(Tissue.id == id)
+            statement = select(Toilet).where(Toilet.id == id)
             results = session.exec(statement)
             tissue = results.one()
 
@@ -49,7 +38,7 @@ def put_tissues(id: int, count: int, angle: int):
             session.refresh(tissue)
 
     else:
-        tissue = Tissue(id=id, rotation=rotation)
+        tissue = Toilet(id=id, rotation=rotation)
         with Session(engine) as session:
             session.add(tissue)
             session.commit()
@@ -59,20 +48,12 @@ def put_tissues(id: int, count: int, angle: int):
 @app.delete("/tissues/")
 def delete_tissues(id: int):
     with Session(engine) as session:
-        tissue = session.query(Tissue).filter(Tissue.id == id).first()
+        tissue = session.query(Toilet).filter(Toilet.id == id).first()
         if tissue is None:
             return JSONResponse(status_code=404, content={"status": "not found"})
         session.delete(tissue)
         session.commit()
         return JSONResponse(status_code=200, content={"status": "ok"})
-
-@app.get("/toilets/")
-def get_toilets(id: int):
-    with Session(engine) as session:
-        toilet = session.query(Toilet).filter(Toilet.id == id).first()
-        if toilet is None:
-            return JSONResponse(status_code=404, content={"status": "not found"})
-        return JSONResponse(status_code=200, content={"status": "ok", "blocked": toilet.blocked})
 
 @app.post("/toilets/")
 def put_toilets(id: int, blocked: bool):
@@ -82,7 +63,12 @@ def put_toilets(id: int, blocked: bool):
             results = session.exec(statement)
             toilet = results.one()
 
-            toilet.blocked = blocked
+            if blocked == True:
+                toilet.flush += 1
+
+            else:
+                toilet.flush = 0
+
             session.add(toilet)
             session.commit()
             session.refresh(toilet)
@@ -104,3 +90,20 @@ def delete_toilets(id: int):
         session.delete(toilet)
         session.commit()
         return JSONResponse(status_code=200, content={"status": "ok"})
+
+@app.get("/toilets/")
+def get_toilets(id: int):
+    with Session(engine) as session:
+        toilet = session.query(Toilet).filter(Toilet.id == id).first()
+        if toilet is None:
+            return JSONResponse(status_code=404, content={"status": "not found"})
+        return JSONResponse(status_code=200, content={"status": "ok", "rotation":toilet.rotation, "flush": toilet.flush})
+
+@app.get("/toilets/list/")
+def get_toilets_list():
+    with Session(engine) as session:
+        statement = select(Toilet)
+        results = session.exec(statement)
+        toilets = results.all()
+        toilets = [toilet.id for toilet in toilets]
+        return JSONResponse(status_code=200, content={"status": "ok", "toilets": toilets})
